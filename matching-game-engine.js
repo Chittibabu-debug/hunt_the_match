@@ -4,24 +4,26 @@
    ========================================================================== */
 
 window.initMatchingGame = function(configArray) {
-  console.log("Matching Game Engine: Initializing with " + configArray.length + " items...");
+  console.log("Matching Game Engine: Initializing Engine with " + configArray.length + " variables...");
 
+  // Destroy redundant diagnostic panels if resetting
   const oldPanel = document.getElementById('storyline-blue-debug-panel');
   if (oldPanel) oldPanel.remove();
 
   const player = GetPlayer();
   
-  // Look for elements dynamically using the Accessibility Text set by the developer
+  // Map items using native Articulate Object Hooks
   const pieces = configArray.map(p => {
     let targetObj = null;
     
-    // Look for Articulate Storyline's accessibility text wrapper in the HTML DOM
-    targetObj = document.querySelector(`[data-acc-text="${p.id}"]`) || 
-                document.querySelector(`[acc-text="${p.id}"]`) || 
-                document.getElementById(p.id);
+    if (typeof object === 'function') {
+      targetObj = object(p.id); // Official Articulate 360 Object Lookups
+    } else if (typeof DS !== 'undefined' && typeof DS.object === 'function') {
+      targetObj = DS.object(p.id);
+    }
 
     if (!targetObj) {
-      console.warn(`Matching Game Engine: Could not find any shape on screen with Accessibility Text matching: "${p.id}"`);
+      console.warn(`Matching Game Engine: Shape Object ID "${p.id}" could not be found on your slide stage.`);
     }
 
     return {
@@ -31,144 +33,88 @@ window.initMatchingGame = function(configArray) {
     };
   }).filter(p => p.obj !== null);
 
-  // Set interactivity
-  pieces.forEach(p => {
-    try { p.obj.style.cursor = 'pointer'; } catch (e) {}
-  });
-
   let first = null;
   let lock = false;
-
-  const grows = new Map();  
-  const flips = new Map();  
-  let lastTime = null;
+  const flips = new Map();
 
   function resetSelection() {
     first = null;
     lock = false;
   }
 
-  function finalizeStateChange(p) {
-    p.matched = true;
-    // Set a data attribute or trigger visibility for Storyline matching states if needed
-    try { p.obj.style.pointerEvents = 'none'; } catch (e) {}
-    updateDebugPanelUI();
-  }
+  // Native Storyline 60FPS tick engine integration
+  if (typeof update === 'function') {
+    update(() => {
+      if (flips.size > 0) {
+        flips.forEach((anim, key) => {
+          anim.t += 0.016; // Increment roughly 16ms per frame tick
+          let prog = Math.min(1, anim.t / anim.duration);
+          
+          // Midpoint mathematical cosine wave curve mapping mirror states
+          let factor = Math.abs(Math.cos(prog * Math.PI)) * 100;
+          anim.p.obj.scaleX = factor; 
 
-  function startFlipEffect(p, targetState) {
-    if (grows.has(p.id)) grows.delete(p.id);
-    
-    // Fallback if scale attributes aren't parsed out natively
-    flips.set(p.id, {
-      p,
-      t: 0,
-      duration: 0.45,
-      baseX: 1,
-      targetState,
-      swapped: false
+          if (prog >= 0.5 && !anim.swapped) {
+            anim.p.obj.state = anim.targetState;
+            anim.swapped = true;
+          }
+
+          updateDebugPanelUI();
+
+          if (prog >= 1) {
+            anim.p.obj.scaleX = 100;
+            flips.delete(key);
+            if (flips.size === 0) lock = false;
+          }
+        });
+      }
     });
   }
 
-  function startGrowThenStateChange(p) {
-    if (flips.has(p.id)) flips.delete(p.id);
-
-    grows.set(p.id, {
-      p,
-      t: 0,
-      duration: 0.22,
-      amp: 0.14,
-      baseX: 1
-    });
-
-    try { p.obj.style.pointerEvents = 'none'; } catch (e) {}
-  }
-
-  // FIXED: Native browser animation frame loop instead of the missing 'update' call
-  function animationLoop(time) {
-    if (lastTime == null) lastTime = time;
-    const dt = (time - lastTime) / 1000;
-    lastTime = time;
-
-    // Handle Flips
-    if (flips.size > 0) {
-      flips.forEach((anim, key) => {
-        anim.t += dt;
-        const prog = Math.min(1, anim.t / anim.duration);
-        const scaleFactor = Math.abs(Math.cos(prog * Math.PI));
-        
-        anim.p.obj.style.transform = `scaleX(${anim.baseX * scaleFactor})`;
-        updateDebugPanelUI();
-
-        if (prog >= 1) {
-          anim.p.obj.style.transform = `scaleX(${anim.baseX})`;
-          flips.delete(key);
-          if (flips.size === 0 && grows.size === 0) lock = false;
-        }
-      });
-    }
-
-    // Handle Correct Match Grows
-    if (grows.size > 0) {
-      grows.forEach((anim, key) => {
-        if (anim.p.matched) { grows.delete(key); return; }
-
-        anim.t += dt;
-        const prog = Math.min(1, anim.t / anim.duration);
-        const easeOut = 1 - Math.pow(1 - prog, 3);
-        const currentScale = anim.baseX + anim.amp * easeOut;
-
-        anim.p.obj.style.transform = `scale(${currentScale})`;
-
-        if (prog >= 1) {
-          anim.p.obj.style.transform = `scale(${anim.baseX})`;
-          finalizeStateChange(anim.p);
-          grows.delete(key);
-        }
-      });
-    }
-
-    requestAnimationFrame(animationLoop);
-  }
-  
-  // Kick off the native loop
-  requestAnimationFrame(animationLoop);
-
-  // Click handler attachments via native DOM listening
+  // Controller interaction
   pieces.forEach(p => {
-    p.obj.addEventListener('click', () => {
-      if (lock || p.matched || grows.has(p.id) || flips.has(p.id)) return;
+    // Official advanced click handler hook
+    p.obj.pointerup(() => {
+      if (lock || p.matched || flips.has(p.id)) return;
 
       if (!first) {
         first = p;
         lock = true; 
-        startFlipEffect(p, 'Highlight');
+        // Spin to show card back or selection highlight state
+        flips.set(p.id, { p, t: 0, duration: 0.45, targetState: 'Highlight', swapped: false });
         return;
       }
 
       if (first.id === p.id) {
         lock = true;
-        startFlipEffect(p, 'Normal');
+        flips.set(p.id, { p, t: 0, duration: 0.45, targetState: 'Normal', swapped: false });
         resetSelection();
         return;
       }
 
       lock = true;
-      startFlipEffect(p, 'Highlight');
+      flips.set(p.id, { p, t: 0, duration: 0.45, targetState: 'Highlight', swapped: false });
 
       setTimeout(() => {
         if (first.type === p.type) {
-          startGrowThenStateChange(first);
-          startGrowThenStateChange(p);
+          // CORRECT MATCH
+          first.matched = true;
+          p.matched = true;
+          first.obj.state = 'Flipped';
+          p.obj.state = 'Flipped';
+          updateDebugPanelUI();
+          resetSelection();
         } else {
-          startFlipEffect(first, 'Normal');
-          startFlipEffect(p, 'Normal');
+          // MISMATCH - Flip back natively
+          flips.set(first.id, { p: first, t: 0, duration: 0.45, targetState: 'Normal', swapped: false });
+          flips.set(p.id, { p: p, t: 0, duration: 0.45, targetState: 'Normal', swapped: false });
+          resetSelection();
         }
-        resetSelection();
-      }, 230); 
+      }, 240); 
     });
   });
 
-  // Debugger Layout
+  // --- Diagnostics Overlay ---
   let debugPanelEl = null;
   function createDebugPanel() {
     debugPanelEl = document.createElement('div');
@@ -177,20 +123,22 @@ window.initMatchingGame = function(configArray) {
       position: 'absolute', top: '20px', right: '20px', width: '380px', maxHeight: '85vh',
       backgroundColor: '#002244', color: '#66ccff', border: '2px solid #0055aa', borderRadius: '8px',
       boxShadow: '0 10px 25px rgba(0,0,0,0.5)', fontFamily: 'Consolas, monospace', fontSize: '12px',
-      padding: '15px', zIndex: '999999', overflowY: 'auto', opacity: '0.95', display: 'none'
+      padding: '15px', zIndex: '999999', overflowY: 'auto', opacity: '0.95', display: 'block' // FORCED OPEN
     });
     document.body.appendChild(debugPanelEl);
   }
 
   function updateDebugPanelUI() {
-    if (!debugPanelEl || debugPanelEl.style.display === 'none') return;
+    if (!debugPanelEl) createDebugPanel();
     let piecesHtml = '';
     let timersHtml = '';
 
     pieces.forEach(p => {
+      let stateTracker = "Normal";
+      try { stateTracker = p.obj.state; } catch(e){}
       const matchText = p.matched ? '<span style="color:#00ffcc">TRUE</span>' : '<span style="color:#ff5555">FALSE</span>';
       piecesHtml += `<div style="margin-bottom:6px; padding-bottom:4px; border-bottom:1px dashed #004488">
-        <strong>Acc-Text Name:</strong> "${p.id}" [${p.type}]<br/>Matched: ${matchText}
+        <strong>ID:</strong> "${p.id}"<br/>Matched: ${matchText} | State: ${stateTracker}
       </div>`;
     });
 
@@ -200,11 +148,10 @@ window.initMatchingGame = function(configArray) {
 
     debugPanelEl.innerHTML = `
       <div style="display:flex; justify-content:space-between; margin-bottom:12px; border-bottom:2px solid #0055aa; padding-bottom:5px;">
-        <span style="color:#fff; font-weight:bold;">DYNAMIC GAME PANEL</span><span style="color:#888;">[Ctrl+Shift+E]</span>
+        <span style="color:#fff; font-weight:bold;">DYNAMIC ENGINE DIAGNOSTICS</span>
       </div>
       <div style="margin-bottom:12px; background:#001122; padding:6px; border-radius:4px;">
-        <strong>Shapes Found:</strong> ${pieces.length} / ${configArray.length}<br/>
-        <strong>Status:</strong> ${lock ? '<span style="color:#ff5555">ANIMATING</span>' : '<span style="color:#00ffcc">READY</span>'}
+        <strong>Shapes Found:</strong> ${pieces.length} / ${configArray.length}
       </div>
       <div style="margin-bottom:12px; background:#001122; padding:6px; border-radius:4px; border-left:3px solid #ffff55;">
         <h5 style="margin:0 0 4px 0; color:#ffff55; font-size:11px;">LIVE FLIP TIMERS:</h5>${timersHtml}
@@ -212,12 +159,6 @@ window.initMatchingGame = function(configArray) {
       <div>${piecesHtml}</div>`;
   }
 
-  window.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') {
-      e.preventDefault();
-      if (!debugPanelEl) createDebugPanel();
-      debugPanelEl.style.display = debugPanelEl.style.display === 'none' ? 'block' : 'none';
-      updateDebugPanelUI();
-    }
-  });
+  // Fire display configuration immediately
+  updateDebugPanelUI();
 };
