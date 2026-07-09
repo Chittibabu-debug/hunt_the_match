@@ -1,20 +1,47 @@
-/* Reusable Matching Game Framework
+/* ==========================================================================
+   REUSABLE MATCHING GAME FRAMEWORK
+   File: matching-game-engine.js
+   --------------------------------------------------------------------------
    - Pulse effect removed entirely (replaced by smooth reverse flip)
-   - Dynamic item configuration
-*/
+   - Dynamic shape configuration (supports 4 to 24+ shapes)
+   - Storyline HTML5 runtime compatible (Safe DS.object / DOM fallback)
+   ========================================================================== */
+
 window.initMatchingGame = function(configArray) {
-  // Clear any existing debug panel to avoid overlap on slide re-entry
+  console.log("Matching Game Engine: Initializing with " + configArray.length + " items...");
+
+  // Clear any existing debug panel to avoid duplicate overlays on slide re-entry
   const oldPanel = document.getElementById('storyline-blue-debug-panel');
   if (oldPanel) oldPanel.remove();
 
   const player = GetPlayer();
-  const pieces = configArray.map(p => ({
-    ...p,
-    obj: object(p.id),
-    matched: false
-  }));
+  
+  // Resolve Storyline objects safely using a multi-tier fallback approach
+  const pieces = configArray.map(p => {
+    let targetObj = null;
+    
+    // Tier 1: Try Storyline's native internal DS object selector
+    if (typeof DS !== 'undefined' && typeof DS.object === 'function') {
+      targetObj = DS.object(p.id);
+    }
+    
+    // Tier 2: Try DOM querying via standard accessibility text or element ID
+    if (!targetObj) {
+      targetObj = document.querySelector(`[data-acc-text="${p.id}"]`) || document.getElementById(p.id);
+    }
 
-  // Make elements look clickable
+    if (!targetObj) {
+      console.warn(`Matching Game Engine: Object ID "${p.id}" could not be found on the current slide timeline.`);
+    }
+
+    return {
+      ...p,
+      obj: targetObj,
+      matched: false
+    };
+  }).filter(p => p.obj !== null); // Filters out missing objects to keep the script engine alive
+
+  // Make found interactive elements display a pointer cursor
   pieces.forEach(p => {
     try { p.obj.style.cursor = 'pointer'; } catch (e) {}
   });
@@ -22,7 +49,7 @@ window.initMatchingGame = function(configArray) {
   let first = null;
   let lock = false;
 
-  // Active animation loops
+  // Active animation registries
   const grows = new Map();  
   const flips = new Map();  
   let lastTime = null;
@@ -48,7 +75,7 @@ window.initMatchingGame = function(configArray) {
     flips.set(p.id, {
       p,
       t: 0,
-      duration: 0.45,
+      duration: 0.45, // 0.45s gives clean canvas transition breathing room
       baseX,
       baseY,
       targetState,
@@ -74,19 +101,20 @@ window.initMatchingGame = function(configArray) {
     try { p.obj.style.pointerEvents = 'none'; } catch (e) {}
   }
 
-  // Unified requestAnimationFrame canvas loop
+  // Unified RequestAnimationFrame canvas update loop
   update(time => {
     if (lastTime == null) lastTime = time;
     const dt = (time - lastTime) / 1000;
     lastTime = time;
 
-    // Flip transition engine
+    // --- Flip Transition Matrix Engine ---
     if (flips.size > 0) {
       flips.forEach((anim, key) => {
         anim.t += dt;
         const prog = Math.min(1, anim.t / anim.duration);
         const scaleFactor = Math.abs(Math.cos(prog * Math.PI));
         
+        // At the absolute midpoint (card edge-on), swap the actual asset state asset
         if (prog >= 0.5 && !anim.swapped) {
           try { anim.p.obj.state = anim.targetState; } catch(e) {}
           anim.swapped = true;
@@ -103,7 +131,7 @@ window.initMatchingGame = function(configArray) {
       });
     }
 
-    // Correct match grow feedback
+    // --- Correct Match Grow Feedback ---
     if (grows.size > 0) {
       grows.forEach((anim, key) => {
         if (anim.p.matched) { grows.delete(key); return; }
@@ -125,11 +153,12 @@ window.initMatchingGame = function(configArray) {
     }
   });
 
-  // Tap/Click Controller Setup
+  // --- Interaction Click Controllers ---
   pieces.forEach(p => {
     p.obj.click(() => {
       if (lock || p.matched || grows.has(p.id) || flips.has(p.id)) return;
 
+      // Card Selection 1
       if (!first) {
         first = p;
         lock = true; 
@@ -137,6 +166,7 @@ window.initMatchingGame = function(configArray) {
         return;
       }
 
+      // Deselect if user taps the same shape again
       if (first.id === p.id) {
         lock = true;
         startFlipEffect(p, 'Normal');
@@ -144,15 +174,17 @@ window.initMatchingGame = function(configArray) {
         return;
       }
 
+      // Card Selection 2
       lock = true;
       startFlipEffect(p, 'Highlight');
 
+      // Evaluates match precisely at the 230ms flip midpoint
       setTimeout(() => {
         if (first.type === p.type) {
           startGrowThenStateChange(first);
           startGrowThenStateChange(p);
         } else {
-          // REMOVED PULSE: If wrong, we drop them directly into a flip reversal
+          // If mismatch, immediately reverse flip both cards back to normal
           startFlipEffect(first, 'Normal');
           startFlipEffect(p, 'Normal');
         }
@@ -161,7 +193,7 @@ window.initMatchingGame = function(configArray) {
     });
   });
 
-  // --- Diagnostics Overlay ---
+  // --- HTML5 Diagnostics Overlay Panel ---
   let debugPanelEl = null;
   function createDebugPanel() {
     debugPanelEl = document.createElement('div');
@@ -169,7 +201,7 @@ window.initMatchingGame = function(configArray) {
     Object.assign(debugPanelEl.style, {
       position: 'absolute', top: '20px', right: '20px', width: '380px', maxHeight: '85vh',
       backgroundColor: '#002244', color: '#66ccff', border: '2px solid #0055aa', borderRadius: '8px',
-      boxShadow: '0 10px 25px rgba(0,0,0,0.5)', fontFamily: 'Consolas, monospace', fontSize: '12px',
+      boxShadow: '0 10px 25px rgba(0,0,0,0.5)', fontFamily: 'Consolas, Monaco, monospace', fontSize: '12px',
       padding: '15px', zIndex: '999999', overflowY: 'auto', opacity: '0.95', display: 'none'
     });
     document.body.appendChild(debugPanelEl);
@@ -198,7 +230,7 @@ window.initMatchingGame = function(configArray) {
         <span style="color:#fff; font-weight:bold;">DYNAMIC GAME PANEL</span><span style="color:#888;">[Ctrl+Shift+E]</span>
       </div>
       <div style="margin-bottom:12px; background:#001122; padding:6px; border-radius:4px;">
-        <strong>Active Shapes Configured:</strong> ${pieces.length}<br/>
+        <strong>Active Shapes Configured:</strong> ${pieces.length} / ${configArray.length}<br/>
         <strong>Status:</strong> ${lock ? '<span style="color:#ff5555">WAITING</span>' : '<span style="color:#00ffcc">READY</span>'}
       </div>
       <div style="margin-bottom:12px; background:#001122; padding:6px; border-radius:4px; border-left:3px solid #ffff55;">
@@ -207,6 +239,7 @@ window.initMatchingGame = function(configArray) {
       <div>${piecesHtml}</div>`;
   }
 
+  // Global key listener to toggle the diagnostic display module
   window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') {
       e.preventDefault();
