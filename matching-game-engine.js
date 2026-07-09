@@ -6,19 +6,13 @@
 window.initMatchingGame = function(configArray) {
   console.log("Matching Game Engine: Initializing with " + configArray.length + " items...");
 
-  // Multi-tier safe object retriever to prevent "object is not defined" crashes
-  function getStorylineObject(id) {
-    if (typeof object === 'function') return object(id);
-    if (typeof DS !== 'undefined' && typeof DS.object === 'function') return DS.object(id);
-    return null;
-  }
-
-  // Map the dynamically provided configuration array to game pieces
+  // Accept the objects directly from Storyline's trigger scope
   const pieces = configArray.map(p => ({
     ...p,
-    obj: getStorylineObject(p.id),
     matched: false
-  })).filter(p => p.obj !== null);
+  })).filter(p => p.obj !== undefined && p.obj !== null);
+
+  console.log("Matching Game Engine: Successfully registered " + pieces.length + " active shapes.");
 
   // Make elements look clickable safely
   pieces.forEach(p => {
@@ -121,7 +115,7 @@ window.initMatchingGame = function(configArray) {
           startFlipEffect(first, 'Normal');
           startFlipEffect(p, 'Normal');
           resetSelection();
-        }, 800); // 800ms clean display retention pause
+        }, 800); 
       }
     });
   });
@@ -177,10 +171,12 @@ window.initMatchingGame = function(configArray) {
       <div style="background:#001122; padding:6px; margin-bottom:12px; border-left:3px solid #ffff55; border-radius:4px;">
         <h5 style="margin:0; color:#ffff55; font-size:11px;">TIMERS:</h5>${timersHtml}
       </div>
-      <div>${piecesHtml}</div>`;
+      <div>
+        <h4 style="margin:0 0 8px 0; color:#fff; font-size:13px;">Registered Pieces:</h4>
+        ${piecesHtml}
+      </div>`;
   }
 
-  // Setup Keyboard shortcut listener safely once
   if (!window.hasMatchingDebugListener) {
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'e') {
